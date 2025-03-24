@@ -42,6 +42,9 @@ metadata:
   namespace: mytest
 data:
   config.yaml: |
+    kube:
+      namespaces: []
+      
     kafka:
       enable: true
       brokers:

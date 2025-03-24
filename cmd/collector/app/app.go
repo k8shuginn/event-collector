@@ -33,7 +33,11 @@ func NewCollector(c *config.Config) (*Collector, error) {
 		exporters: exporters,
 	}
 
-	client, err := kube.NewClient(handler, kube.WithKubeConfig(c.Kube.Config), kube.WithResyncTime(c.Kube.Resync))
+	client, err := kube.NewClient(handler,
+		kube.WithKubeConfig(c.Kube.Config),
+		kube.WithResyncTime(c.Kube.Resync),
+		kube.WithNamespaces(c.Kube.Namespaces),
+	)
 	if err != nil {
 		return nil, err
 	}

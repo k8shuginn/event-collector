@@ -1,8 +1,12 @@
 kube:
   config: ~/.kube/config
   resync: 10s
+  namespaces:
+    - default
+    - kube-system
 
 kafka:
+  enable: true
   brokers:
     - localhost:9092
     - localhost:9093
@@ -14,7 +18,16 @@ kafka:
   flushTime: 3s
   flushByte: 1000
 
+elasticsearch:
+  enable: false
+  address:
+    - http://localhost:9200
+  user: elastic
+  pass: elastic
+  index: event
+
 volume:
+  enable: true
   fileName: test
   filePath: /tmp
   maxFileSize: 100
