@@ -10,18 +10,23 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-type Client struct {
-	cs       *kubernetes.Clientset
-	iFactory informers.SharedInformerFactory
-	closeCh  chan struct{}
+type ifm struct {
+	factory  informers.SharedInformerFactory
+	informer cache.SharedIndexInformer
+}
 
-	sii cache.SharedIndexInformer              // SharedIndexInformer 객체
-	reg cache.ResourceEventHandlerRegistration // event handler 등록 정보
+type Client struct {
+	cs *kubernetes.Clientset
+
+	closeCh chan struct{}
+	ifms    map[string]ifm
 }
 
 func NewClient(eh cache.ResourceEventHandler, opts ...Option) (*Client, error) {
 	c := fromOptions(opts...)
-	client := &Client{}
+	client := &Client{
+		ifms: make(map[string]ifm),
+	}
 
 	// clientConfig 설정
 	var clientConfig *rest.Config
@@ -44,14 +49,26 @@ func NewClient(eh cache.ResourceEventHandler, opts ...Option) (*Client, error) {
 		return nil, fmt.Errorf("failed to create kubernetes clientset: %v", err)
 	}
 
-	// SharedInformerFactory 생성
-	client.iFactory = informers.NewSharedInformerFactory(client.cs, c.resyncTime)
-
-	// SharedIndexInformer, ResourceEventHandler 생성
-	client.sii = client.iFactory.Events().V1().Events().Informer()
-	client.reg, err = client.sii.AddEventHandler(eh)
-	if err != nil {
-		return nil, fmt.Errorf("failed to add kubernetes event handler: %v", err)
+	if len(c.namespaces) > 0 {
+		// namespace별로 informer 생성
+		for ns := range c.namespaces {
+			factory := informers.NewSharedInformerFactoryWithOptions(client.cs, c.resyncTime, informers.WithNamespace(ns))
+			informer := factory.Events().V1().Events().Informer()
+			informer.AddEventHandler(eh)
+			client.ifms[ns] = ifm{
+				factory:  factory,
+				informer: informer,
+			}
+		}
+	} else {
+		// 모든 namespace를 수집하는 경우
+		factory := informers.NewSharedInformerFactory(client.cs, c.resyncTime)
+		informer := factory.Events().V1().Events().Informer()
+		informer.AddEventHandler(eh)
+		client.ifms["*"] = ifm{
+			factory:  factory,
+			informer: informer,
+		}
 	}
 
 	return client, nil
@@ -60,11 +77,13 @@ func NewClient(eh cache.ResourceEventHandler, opts ...Option) (*Client, error) {
 // Run client 실행
 func (c *Client) Run() {
 	c.closeCh = make(chan struct{})
-	go c.iFactory.Start(c.closeCh)
+
+	for _, ifm := range c.ifms {
+		go ifm.factory.Start(c.closeCh)
+	}
 }
 
 // Close client 종료
 func (c *Client) Close() {
-	_ = c.sii.RemoveEventHandler(c.reg)
 	close(c.closeCh)
 }

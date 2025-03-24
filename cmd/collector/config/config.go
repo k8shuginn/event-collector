@@ -12,8 +12,9 @@ import (
 
 type Config struct {
 	Kube struct {
-		Config string        `yaml:"config"` // 없으면 in-cluster 자동 설정
-		Resync time.Duration `yaml:"resync"`
+		Config     string        `yaml:"config"`     // 없으면 in-cluster 자동 설정
+		Resync     time.Duration `yaml:"resync"`     // 없으면 재수집 안함
+		Namespaces []string      `yaml:"namespaces"` // 없으면 전체 네임스페이스
 	} `yaml:"kube"`
 
 	Kafka struct {
