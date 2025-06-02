@@ -97,3 +97,5 @@ kubectl apply -f ./manifest/event-collector.yaml
 * helm chart 작성
 * 이벤트 필터링 기능 추가
 * 이벤트 분석 기능 추가
+
+
