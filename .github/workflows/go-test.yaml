@@ -14,13 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@${{ vars.CHECKOUT_VERSION }}
+        uses: actions/checkout@v4
 
       - name: Set up golang
-        uses: actions/setup-go@${{ vars.GO_SETUP_VERSION }}
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ vars.GO_VERSION }}
 
       - name: Run tests
         run: |
           echo "Running tests..."
+          echo "Go version: $(go version)"
