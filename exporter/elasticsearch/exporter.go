@@ -52,6 +52,11 @@ func NewElasticsearchExporter(addrs []string, index string, opts ...Option) (*El
 		return nil, fmt.Errorf("failed to create elasticsearch exporter: %w", err)
 	}
 
+	_, err = es.Info()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to elasticsearch: %w", err)
+	}
+
 	e := &ElasticsearchExporter{
 		es:        es,
 		index:     index,

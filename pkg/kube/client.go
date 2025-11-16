@@ -52,7 +52,7 @@ func NewClient(eh cache.ResourceEventHandler, opts ...Option) (*Client, error) {
 	if len(c.namespaces) > 0 {
 		// namespace별로 informer 생성
 		for ns := range c.namespaces {
-			factory := informers.NewSharedInformerFactoryWithOptions(client.cs, c.resyncTime, informers.WithNamespace(ns))
+			factory := informers.NewSharedInformerFactoryWithOptions(client.cs, c.resyncPeriod, informers.WithNamespace(ns))
 			informer := factory.Events().V1().Events().Informer()
 			informer.AddEventHandler(eh)
 			client.ifms[ns] = ifm{
@@ -62,7 +62,7 @@ func NewClient(eh cache.ResourceEventHandler, opts ...Option) (*Client, error) {
 		}
 	} else {
 		// 모든 namespace를 수집하는 경우
-		factory := informers.NewSharedInformerFactory(client.cs, c.resyncTime)
+		factory := informers.NewSharedInformerFactory(client.cs, c.resyncPeriod)
 		informer := factory.Events().V1().Events().Informer()
 		informer.AddEventHandler(eh)
 		client.ifms["*"] = ifm{

@@ -19,11 +19,18 @@ jobs:
       - name: Set up golang
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ vars.GO_VERSION }}
+          go-version: ${{ vars.GH_GO_VERSION }}
 
       - name: Run tests
+        env:
+          KAFKA_BROKERS: ${{ vars.KAFKA_BROKERS }}
+          KAFKA_TOPIC: ${{ vars.KAFKA_TOPIC }}
+          ELASTICSEARCH_ADDR: ${{ vars.ELASTICSEARCH_ADDR }}
+          ELASTICSEARCH_INDEX: ${{ vars.ELASTICSEARCH_INDEX }}
+          ELASTICSEARCH_USER: ${{ secrets.ELASTICSEARCH_USER }}
+          ELASTICSEARCH_PASSWORD: ${{ secrets.ELASTICSEARCH_PASSWORD }}
         run: |
           echo "Running tests..."
           echo "Go version: $(go version)"
 
-          sleep 10
+          go test -v ./...

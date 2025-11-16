@@ -14,11 +14,18 @@ const (
 	DefaultLogExtention string = ".log"
 	DefaultAppName      string = "app"
 
-	DefaultMaxSize    int  = 100
-	DefaultMaxBackups int  = 3
-	DefaultMaxAge     int  = 7
-	DefaultLocalTime  bool = true
-	DefaultCompress   bool = true
+	DefaultMaxSize    int  = 100   // megabytes
+	DefaultMaxBackups int  = 3     // number of backups
+	DefaultMaxAge     int  = 7     // log retention period days
+	DefaultLocalTime  bool = true  // use local time for timestamps
+	DefaultCompress   bool = false // disabled compression by default
+)
+
+type EncoderType string
+
+const (
+	JSONEncoder    EncoderType = "json"
+	ConsoleEncoder EncoderType = "console"
 )
 
 type config struct {
@@ -63,45 +70,45 @@ func fromOptions(appName string, options ...Option) *config {
 }
 
 // WithPath 로그 파일 경로 설정
-func WithPath(path string) Option {
+func WithPath(dirPath string) Option {
 	return func(c *config) {
-		if path != "" {
-			c.logger.Filename = filepath.Join(path, c.appName+DefaultLogExtention)
+		if dirPath != "" {
+			c.logger.Filename = filepath.Join(dirPath, c.appName+DefaultLogExtention)
 		}
 	}
 }
 
 // WithLogExtention 로그 파일 확장자 설정
-func WithLogMaxSize(size int) Option {
+func WithLogMaxSize(maxSize int) Option {
 	return func(c *config) {
-		if size > 0 {
-			c.logger.MaxSize = size
+		if maxSize > 0 {
+			c.logger.MaxSize = maxSize
 		}
 	}
 }
 
 // WithLogMaxBackups 로그 파일 백업 설정
-func WithLogMaxBackups(backups int) Option {
+func WithLogMaxBackups(maxBackups int) Option {
 	return func(c *config) {
-		if backups > 0 {
-			c.logger.MaxBackups = backups
+		if maxBackups > 0 {
+			c.logger.MaxBackups = maxBackups
 		}
 	}
 }
 
 // WithLogMaxAge 로그 파일 보관 기간 설정
-func WithLogMaxAge(age int) Option {
+func WithLogMaxAge(maxAge int) Option {
 	return func(c *config) {
-		if age > 0 {
-			c.logger.MaxAge = age
+		if maxAge > 0 {
+			c.logger.MaxAge = maxAge
 		}
 	}
 }
 
 // WithLogLocalTime 로컬 시간 설정
-func WithLogLocalTime(localTime bool) Option {
+func WithLogLocalTime(isLocalTime bool) Option {
 	return func(c *config) {
-		c.logger.LocalTime = localTime
+		c.logger.LocalTime = isLocalTime
 	}
 }
 
@@ -136,16 +143,17 @@ func WithLogLevel(level string) Option {
 	}
 }
 
-// WitchEncoder 로그 인코더 설정
-func WitchEncoder(encoder string) Option {
+// WithEncoder 로그 인코더 설정
+// JSON, Console 지원
+func WithEncoder(encoderType EncoderType) Option {
 	return func(c *config) {
 		encoderConfig := zap.NewProductionEncoderConfig()
 		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
-		switch strings.ToUpper(encoder) {
-		case "CONSOLE":
+		switch encoderType {
+		case ConsoleEncoder:
 			c.encoder = zapcore.NewConsoleEncoder(encoderConfig)
-		case "JSON":
+		case JSONEncoder:
 			fallthrough
 		default:
 			c.encoder = zapcore.NewJSONEncoder(encoderConfig)

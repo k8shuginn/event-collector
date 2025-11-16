@@ -10,7 +10,7 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	logger.CreateGlobalTestLogger()
+	logger.CreateGlobalLogger("config_test")
 	path, _ := os.Getwd()
 
 	config, err := LoadConfig(filepath.Join(path, "test.yaml"))
