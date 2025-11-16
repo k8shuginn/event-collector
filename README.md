@@ -129,4 +129,4 @@ helm upgrade --install gh-runner \
 
 ## Github workflow 작성
 .github/workflows/go-test.yaml 파일을 생성하여 Go 테스트를 자동화합니다.
-[go-test.yaml](https://github.com/k8shuginn/event-collector/.github/workflows/go-test.yaml)
+[go-test.yaml](https://github.com/k8shuginn/event-collector/blob/develop/.github/workflows/go-test.yaml)
