@@ -7,6 +7,7 @@ import (
 	"github.com/k8shuginn/event-collector/cmd/collector/app"
 	"github.com/k8shuginn/event-collector/cmd/collector/config"
 	"github.com/k8shuginn/event-collector/pkg/logger"
+	"github.com/k8shuginn/event-collector/pkg/pprof"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +24,7 @@ const (
 )
 
 func init() {
+	// set logger
 	logLevel := os.Getenv(EnvLogLevel)
 	logSize, _ := strconv.Atoi(os.Getenv(EnvLogSize))
 	logAge, _ := strconv.Atoi(os.Getenv(EnvLogAge))
@@ -37,6 +39,9 @@ func init() {
 		logger.WithLogMaxBackups(logBack),
 		logger.WithLogCompress(logCompress),
 	)
+
+	// start pprof
+	pprof.InitPprof()
 }
 
 func main() {

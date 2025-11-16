@@ -1,0 +1,36 @@
+name: Test Runner
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  go-test:
+    runs-on: runner-set
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up golang
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ vars.GH_GO_VERSION }}
+
+      - name: Run tests
+        env:
+          KAFKA_BROKERS: ${{ vars.KAFKA_BROKERS }}
+          KAFKA_TOPIC: ${{ vars.KAFKA_TOPIC }}
+          ELASTICSEARCH_ADDR: ${{ vars.ELASTICSEARCH_ADDR }}
+          ELASTICSEARCH_INDEX: ${{ vars.ELASTICSEARCH_INDEX }}
+          ELASTICSEARCH_USER: ${{ secrets.ELASTICSEARCH_USER }}
+          ELASTICSEARCH_PASSWORD: ${{ secrets.ELASTICSEARCH_PASSWORD }}
+        run: |
+          echo "Running tests..."
+          echo "Go version: $(go version)"
+
+          go test -v ./...

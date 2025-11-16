@@ -9,7 +9,7 @@ import (
 func MakeDummy(reVersion string) *kube.Event {
 	dummy := kube.Event{}
 	dummy.Metadata.Name = "test"
-	dummy.Metadata.Namespace = "test"
+	dummy.Metadata.Namespace = "gh-runner"
 	dummy.Metadata.UID = "test1234"
 	dummy.Metadata.ResourceVersion = reVersion
 	dummy.Metadata.CreationTimestamp = time.Now()

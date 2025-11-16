@@ -1,0 +1,12 @@
+// .vscode/settings.json or user settings
+{
+  "go.testEnvVars": {
+    "KUBECONFIG": "${HOME}/.kube/config",
+    "ELASTICSEARCH_ADDR": "https://localhost:30090",
+    "ELASTICSEARCH_INDEX": "event",
+    "ELASTICSEARCH_USER": "elastic",
+    "ELASTICSEARCH_PASSWORD": "elastic",
+    "KAFKA_BROKERS": "localhost:30092",
+    "KAFKA_TOPIC": "event"
+  }
+}

@@ -1,47 +1,40 @@
 package elasticsearch
 
-import "time"
+import (
+	"os"
+	"time"
+)
+
+const (
+	EnvElaticsearchUser = "ELASTICSEARCH_USER"
+	EnvElaticsearchPass = "ELASTICSEARCH_PASSWORD"
+)
 
 type config struct {
-	user string
-	pass string
-
-	chanSize  int
-	flushTime time.Duration
-	flushSize int
+	user, pass string
+	chanSize   int
+	flushTime  time.Duration
+	flushSize  int
 }
 
 type Option func(*config)
 
-func fromOptions(opts ...Option) *config {
-	c := &config{
+func defaultConfig() *config {
+	return &config{
+		user:      os.Getenv(EnvElaticsearchUser),
+		pass:      os.Getenv(EnvElaticsearchPass),
 		chanSize:  200,
 		flushTime: 1 * time.Second, // 1초
 		flushSize: 1024 * 1024,     // 1MB
 	}
+}
 
+func fromOptions(opts ...Option) *config {
+	c := defaultConfig()
 	for _, opt := range opts {
 		opt(c)
 	}
 	return c
-}
-
-// WithUser elasticsearch user 설정
-func WithUser(user string) Option {
-	return func(c *config) {
-		if user != "" {
-			c.user = user
-		}
-	}
-}
-
-// WithPass elasticsearch password 설정
-func WithPass(pass string) Option {
-	return func(c *config) {
-		if pass != "" {
-			c.pass = pass
-		}
-	}
 }
 
 // WithChanSize elasticsearch exporter buffer channel size 설정
@@ -54,19 +47,19 @@ func WithChanSize(size int) Option {
 }
 
 // WithFlushTime elasticsearch exporter buffer flush 시간 설정
-func WithFlushTime(d time.Duration) Option {
+func WithFlushTime(seconds int) Option {
 	return func(c *config) {
-		if d > 0 {
-			c.flushTime = d
+		if seconds > 0 {
+			c.flushTime = time.Duration(seconds) * time.Second
 		}
 	}
 }
 
 // WithFlushSize elasticsearch exporter buffer flush 사이즈 설정
-func WithFlushSize(size int) Option {
+func WithFlushSize(byteSize int) Option {
 	return func(c *config) {
-		if size > 0 {
-			c.flushSize = size
+		if byteSize > 0 {
+			c.flushSize = byteSize
 		}
 	}
 }

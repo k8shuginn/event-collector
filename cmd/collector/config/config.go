@@ -32,9 +32,10 @@ type Config struct {
 	ElasticSearch struct {
 		Enable    bool     `yaml:"enable"`    // 필수
 		Addresses []string `yaml:"addresses"` // 필수
-		User      string   `yaml:"user"`      // 필수
-		Pass      string   `yaml:"pass"`      // 필수
 		Index     string   `yaml:"index"`     // 필수
+		ChanSize  int      `yaml:"chanSize"`
+		FlushTime int      `yaml:"flushTime"`
+		FlushSize int      `yaml:"flushSize"`
 	} `yaml:"elasticsearch"`
 
 	Volume struct {
@@ -94,8 +95,6 @@ func showConfig(config *Config) {
 	if config.ElasticSearch.Enable {
 		logger.Debug("elasticsearch exporter config",
 			zap.Strings("addresses", config.ElasticSearch.Addresses),
-			zap.String("user", config.ElasticSearch.User),
-			zap.String("pass", config.ElasticSearch.Pass),
 			zap.String("index", config.ElasticSearch.Index),
 		)
 	}
@@ -129,14 +128,6 @@ func checkConfig(config *Config) error {
 		if len(config.ElasticSearch.Addresses) == 0 {
 			return fmt.Errorf("elasticsearch addresses is required")
 		}
-		if config.ElasticSearch.User == "" {
-			return fmt.Errorf("elasticsearch user is required")
-		}
-
-		if config.ElasticSearch.Pass == "" {
-			return fmt.Errorf("elasticsearch pass is required")
-		}
-
 		if config.ElasticSearch.Index == "" {
 			return fmt.Errorf("elasticsearch index is required")
 		}

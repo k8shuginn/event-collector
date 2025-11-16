@@ -35,7 +35,7 @@ func NewCollector(c *config.Config) (*Collector, error) {
 
 	client, err := kube.NewClient(handler,
 		kube.WithKubeConfig(c.Kube.Config),
-		kube.WithResyncTime(c.Kube.Resync),
+		kube.WithResycPeriod(c.Kube.Resync),
 		kube.WithNamespaces(c.Kube.Namespaces),
 	)
 	if err != nil {
@@ -96,8 +96,9 @@ func createExporters(c *config.Config) ([]exporter.Exporter, error) {
 	if c.ElasticSearch.Enable {
 		elasticExporter, err := elasticsearch.NewElasticsearchExporter(
 			c.ElasticSearch.Addresses, c.ElasticSearch.Index,
-			elasticsearch.WithUser(c.ElasticSearch.User),
-			elasticsearch.WithPass(c.ElasticSearch.Pass),
+			elasticsearch.WithChanSize(c.ElasticSearch.ChanSize),
+			elasticsearch.WithFlushTime(c.ElasticSearch.FlushTime),
+			elasticsearch.WithFlushSize(c.ElasticSearch.FlushSize),
 		)
 		if err != nil {
 			return nil, err

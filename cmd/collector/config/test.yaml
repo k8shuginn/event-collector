@@ -1,5 +1,4 @@
 kube:
-  config: ~/.kube/config
   resync: 10s
   namespaces:
     - default

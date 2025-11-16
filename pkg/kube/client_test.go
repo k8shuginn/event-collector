@@ -1,8 +1,6 @@
 package kube
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -36,16 +34,14 @@ func TestClient(t *testing.T) {
 		t: t,
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatalf("failed to get user home directory: %v", err)
-	}
-
 	client, err := NewClient(
 		handler,
-		WithKubeConfig(filepath.Join(home, ".kube", "config")),
-		WithResyncTime(0),
+		WithResycPeriod(0),
+		// WithKubeConfig(os.Getenv("KUBECONFIG")),
 	)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
 	client.Run()
 	time.Sleep(10 * time.Second)
