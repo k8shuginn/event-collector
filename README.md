@@ -100,6 +100,10 @@ kubectl get pods -n $NAMESPACE
 ```
 
 # 테스트 환경 구축
+저는 실제 데이터를 다루지 않는 단순한 Mock 테스트보다, 실제 컴포넌트들이 동작하는 환경에서 테스트가 수행되는 방식을 선호합니다. 이러한 이유로 event-collector 프로젝트에서는 GitHub Actions의 Self-Hosted Runner를 활용하여 실제 Kubernetes 클러스터에서 이벤트를 수집하고, 그 데이터를 Elasticsearch와 Kafka에 실제로 저장하는 통합 테스트 환경을 구축하였습니다. 이를 위해 Self-Hosted Runner를 Kubernetes 클러스터 내에 직접 배포하였으며, 해당 Runner는 GitHub Actions 워크플로우를 통해 go test를 실행하면서 실제 클러스터 환경에서 이벤트 수집 로직이 올바르게 동작하는지 검증하도록 구성되어 있습니다. 이러한 방식은 단순한 유닛 테스트를 넘어, 운영 환경과 동일한 조건에서 collector의 동작을 검증할 수 있다는 점에서 신뢰성과 안정성을 크게 높여줍니다.
+
+![event-collector architecture](./docs/go-test-workflows.drawio.png)
+
 ## github action self-hosted runner service account permission setup
 TDD 환경 구축을 위해 GitHub Action Self-Hosted Runner를 설정합니다. 먼저, 필요한 권한을 가진 서비스 계정을 생성합니다.
 ```bash
