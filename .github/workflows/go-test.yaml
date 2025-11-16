@@ -1,0 +1,26 @@
+name: Test Runner
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@${{ vars.CHECKOUT_VERSION }}
+
+      - name: Set up golang
+        uses: actions/setup-go@${{ vars.GO_SETUP_VERSION }}
+        with:
+          go-version: ${{ vars.GO_VERSION }}
+
+      - name: Run tests
+        run: |
+          echo "Running tests..."
