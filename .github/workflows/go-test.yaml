@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  go-test:
     runs-on: runner-set
     steps:
       - name: Checkout code
