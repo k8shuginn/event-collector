@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/k8shuginn/event-collector/cmd/collector/config"
 	"github.com/k8shuginn/event-collector/exporter"
@@ -13,6 +15,10 @@ import (
 	"github.com/k8shuginn/event-collector/exporter/volume"
 	"github.com/k8shuginn/event-collector/pkg/kube"
 	"github.com/k8shuginn/event-collector/pkg/logger"
+)
+
+const (
+	DefaultTimeout = 10 * time.Second
 )
 
 type Collector struct {
@@ -54,6 +60,7 @@ func (c *Collector) Run() {
 	logger.Info("kubernetes event collector started ...")
 	defer logger.Info("kubernetes event collector stopped ...")
 
+	wg := sync.WaitGroup{}
 	// 시그널 수신 설정
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -61,7 +68,7 @@ func (c *Collector) Run() {
 	// event 수집 시작
 	ctx, cancel := context.WithCancel(context.Background())
 	for _, e := range c.exporters {
-		go e.Start(ctx)
+		go e.Start(ctx, &wg)
 	}
 	c.k8sClient.Run()
 
@@ -69,6 +76,21 @@ func (c *Collector) Run() {
 	<-sigChan
 	c.k8sClient.Close()
 	cancel()
+
+	// exporter 종료 대기 (최대 10초)
+	exitChan := make(chan struct{})
+	go func() {
+		defer close(exitChan)
+		wg.Wait()
+	}()
+	select {
+	case <-exitChan:
+		logger.Info("all exporters stopped")
+		return
+	case <-time.After(DefaultTimeout):
+		logger.Warn("timeout waiting for exporters to stop")
+		return
+	}
 }
 
 // createExporters 설정에 따라 Exporter 생성

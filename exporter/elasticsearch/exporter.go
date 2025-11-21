@@ -71,7 +71,7 @@ func NewElasticsearchExporter(addrs []string, index string, opts ...Option) (*El
 }
 
 // Start exporter 시작
-func (e *ElasticsearchExporter) Start(ctx context.Context) error {
+func (e *ElasticsearchExporter) Start(ctx context.Context, wg *sync.WaitGroup) error {
 	logger.Info("[elasticsearch exporter] started")
 	ticker := time.NewTicker(5 * time.Second)
 
@@ -79,9 +79,13 @@ func (e *ElasticsearchExporter) Start(ctx context.Context) error {
 	defer func() {
 		close(e.dataChan)
 		ticker.Stop()
+		e.shutdown()
+
 		logger.Info("[elasticsearch exporter] stopped")
+		wg.Done()
 	}()
 
+	wg.Add(1)
 	for {
 		select {
 		case <-ctx.Done():
@@ -141,4 +145,8 @@ func (e *ElasticsearchExporter) writeBuffer(data []byte) {
 // Write data write
 func (e *ElasticsearchExporter) Write(data []byte) {
 	e.dataChan <- data
+}
+
+func (e *ElasticsearchExporter) shutdown() {
+	e.writeBulk()
 }
