@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/IBM/sarama"
 	"github.com/k8shuginn/event-collector/exporter"
@@ -36,13 +37,15 @@ func NewKafkaExporter(brokers []string, topic string, opts ...Option) (*KafkaExp
 }
 
 // Start exporter 시작
-func (e *KafkaExporter) Start(ctx context.Context) error {
+func (e *KafkaExporter) Start(ctx context.Context, wg *sync.WaitGroup) error {
 	logger.Info("[kafka exporter] started")
 	defer func() {
 		e.shutdown()
 		logger.Info("[kafka exporter] stopped")
+		wg.Done()
 	}()
 
+	wg.Add(1)
 	for {
 		select {
 		case <-ctx.Done():

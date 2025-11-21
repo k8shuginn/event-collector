@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/k8shuginn/event-collector/dummy"
@@ -34,8 +35,10 @@ func TestExporte(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(context.Background())
-	go kafka.Start(ctx)
+	go kafka.Start(ctx, &wg)
 
 	// write test data
 	eventData := dummy.MakeDummy("1")

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/k8shuginn/event-collector/exporter"
 	"github.com/k8shuginn/event-collector/pkg/logger"
@@ -62,13 +63,15 @@ func NewVolumeExporter(fileName, filePath string, opts ...Option) (*VolumeExport
 }
 
 // Start exporter 시작
-func (e *VolumeExporter) Start(ctx context.Context) error {
+func (e *VolumeExporter) Start(ctx context.Context, wg *sync.WaitGroup) error {
 	logger.Info("[volume exporter] started")
 	defer func() {
 		e.shutdown()
 		logger.Info("[volume exporter] stopped")
+		wg.Done()
 	}()
 
+	wg.Add(1)
 	for {
 		select {
 		case <-ctx.Done():

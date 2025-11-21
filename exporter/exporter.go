@@ -1,9 +1,12 @@
 package exporter
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 type Component interface {
-	Start(ctx context.Context) error
+	Start(ctx context.Context, wg *sync.WaitGroup) error
 }
 
 type Exporter interface {
