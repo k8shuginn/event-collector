@@ -1,5 +1,5 @@
 # 1단계: 빌드 환경 (Go 환경)
-FROM golang:1.23 AS builder
+FROM golang:1.26 AS builder
 WORKDIR /app
 
 # 모듈 다운로드
