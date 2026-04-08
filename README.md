@@ -1,136 +1,422 @@
 # event-collector
-event-collector는 Kubernetes 클러스터 내에서 발생하는 다양한 이벤트를 실시간으로 수집하고, 이를 장기 보관과 분석이 가능한 형태로 Kafka, Elasticsearch, 혹은 Local Volume 파일 형태로 저장하는 목적으로 제작된 경량 수집기(Collector)입니다. Kubernetes는 클러스터 내부에서 발생하는 상태 변화에 대해 Event라는 특별한 리소스를 통해 중요한 정보를 제공합니다. 예를 들어, Pod가 스케줄링에 실패하거나(Node 부족, Taint 적용 등), 컨테이너가 CrashLoopBackOff 상태에 빠지거나, Kubelet이 노드를 Ready 상태로 유지하지 못하는 경우처럼 운영 과정에서 필수적으로 알아야 할 경고 또는 장애 정보를 Event 리소스를 통해 노출합니다.
 
-그러나 Kubernetes의 Event는 기본적으로 수명이 짧고 TTL이 지나면 삭제되는 일시적 저장 구조이기 때문에, 실제 운영 환경에서 장애를 분석하거나 트렌드를 장기적으로 관찰하기에는 적합하지 않습니다. 이벤트가 사라지기 전에 빠르게 대응하지 않으면 문제 원인을 파악하는 데 어려움이 생기며, 장애 발생의 흐름을 재현하거나 클러스터 사용 패턴을 분석하는 것도 매우 어려워집니다. 이렇게 중요한 정보를 지속적으로 수집해 체계적으로 보존하고 분석할 수 있는 별도의 모듈이 필요하다는 점에서 이 프로젝트는 출발했습니다.
+event-collector는 Kubernetes 클러스터 내에서 발생하는 다양한 이벤트를 실시간으로 수집하고, 이를 장기 보관과 분석이 가능한 형태로 Kafka, Elasticsearch, 혹은 Local Volume 파일 형태로 저장하는 목적으로 제작된 경량 수집기입니다.
 
-event-collector는 Kubernetes의 client-go 라이브러리에서 제공하는 Informer 패턴을 기반으로 동작하며, API Server를 지속적으로 폴링(polling)하는 방식이 아닌 watch 기반의 스트리밍 방식으로 이벤트를 수집합니다. 이 구조를 통해 클러스터에 부하를 주지 않으면서도 이벤트가 생성된 시점에 거의 실시간에 가깝게 이벤트를 받아볼 수 있습니다. Informer는 내부적으로 로컬 캐시를 유지하며, Add / Update / Delete 이벤트가 발생할 때마다 등록된 핸들러를 호출하도록 되어 있어, 이벤트 스트림을 안정적으로 수집하고 후처리할 수 있는 구조를 자연스럽게 제공합니다.
+Kubernetes는 클러스터 내부에서 발생하는 상태 변화에 대해 Event라는 특별한 리소스를 통해 중요한 정보를 제공합니다. 예를 들어, Pod가 스케줄링에 실패하거나(Node 부족, Taint 적용 등), 컨테이너가 CrashLoopBackOff 상태에 빠지거나, Kubelet이 노드를 Ready 상태로 유지하지 못하는 경우처럼 운영 과정에서 필수적으로 알아야 할 경고 또는 장애 정보를 Event 리소스를 통해 노출합니다.
 
-본 프로젝트에서는 Informer를 통해 들어온 Event 데이터를 공통 모델로 변환한 뒤, 다양한 Exporter로 전달하여 저장할 수 있도록 설계했습니다. Exporter는 인터페이스 기반으로 설계되어 있어 사용자는 원하는 저장소(Kafka, Elasticsearch, Local File)를 선택하거나, 필요하다면 새로운 저장소를 위한 Exporter를 직접 개발하여 추가할 수도 있습니다.
-
-event-collector의 전체 구조는 매우 경량이며, Go의 고루틴 및 채널 기반 비동기 방식으로 동작하기 때문에 높은 처리량을 요구하지 않는 환경에서도 최소한의 자원으로 안정적으로 운영될 수 있습니다. 실제로 CPU 사용률은 매우 낮게 유지되고, 메모리 역시 수십 MiB 정도면 충분합니다. 이는 클러스터 내부에서 동작하는 애플리케이션 특성상 매우 중요한 요소입니다. Collector가 과도한 리소스를 사용하면 오히려 클러스터의 안정성에 악영향을 미칠 수 있기 때문입니다.
-
-# event-collector 실행 조건
-event-collector가 Kubernetes Event 리소스를 안정적으로 수집하기 위해서는 클러스터 내부 또는 외부에서 Kubernetes API Server에 접근할 수 있는 적절한 인증·인가 구성이 필요합니다. Collector는 두 가지 방식 중 하나를 통해 클러스터와 연결됩니다. 첫 번째는 로컬 환경이나 외부 시스템에서 실행될 때 사용되는 kubeconfig 기반 인증 방식이며, 두 번째는 Pod 형태로 클러스터 내부에서 실행될 때 자동으로 주어지는 in-cluster config 방식입니다.
-
-또한 Collector를 Pod 형태로 배포하는 경우, 이 ClusterRole을 특정 ServiceAccount와 묶어주기 위해 적절한 RoleBinding 또는 ClusterRoleBinding이 필요합니다. 이를 통해 Collector는 지정된 네임스페이스나 클러스터 전역에서 Event 리소스에 접근할 수 있는 공식적인 권한을 부여받게 됩니다. 운영 환경에서는 보안 강화를 위해 불필요한 권한을 포함하지 않도록 최소 권한(Least Privilege) 원칙에 따라 ClusterRole을 설계하는 것이 중요합니다. 예를 들어, Event 리소스 외의 다른 리소스(Pod, Deployment 등)에 대한 권한은 Collector가 필요로 하지 않으므로 부여하지 않는 것이 바람직합니다.
-
-# Exporter 종류
-## Kafka Exporter
-Kafka Exporter는 수집된 이벤트 데이터를 Apache Kafka로 전송하는 역할을 합니다.
-Kafka Exporter는 대규모 이벤트 처리나 스트리밍 파이프라인을 구성하는 데 적합합니다. Kubernetes 이벤트는 정상적인 클러스터에서는 매우 대량으로 발생하지 않지만, 규모가 큰 환경(예: 수백 개 이상의 노드, 수천 개의 Pod)에서는 이벤트가 짧은 시간 내에 폭발적으로 증가할 수 있습니다. Kafka Exporter는 이러한 상황에서도 안정적으로 이벤트를 전달할 수 있으며, 이후 Flink, Spark, Kafka Streams, ksqlDB와 같은 분석 시스템과 연동하여 실시간 분석 환경을 쉽게 구성할 수 있습니다.
-
-## Elasticsearch Exporter
-Elasticsearch Exporter는 운영 모니터링과 장애 분석을 좀 더 직관적으로 수행하기 위한 용도로 설계되었습니다. 이벤트를 Elasticsearch에 저장하면 Kibana를 통해 문제 시점별로 이벤트를 검색하고 필터링할 수 있으며, 특정 워크로드 또는 특정 노드에서 반복적으로 발생하는 문제를 한눈에 확인할 수 있습니다. 예를 들어, 특정 Deployment가 지속적으로 CrashLoopBackOff 상태에 빠진다거나 특정 노드에서만 ImagePullBackOff가 반복된다면 Elasticsearch 분석 환경에서 이를 손쉽게 시각화하고 패턴을 찾을 수 있습니다.
-
-## Volume Exporter
-Volume Exporter는 이벤트 데이터를 로컬 파일 시스템에 저장하는 간단한 방법을 제공합니다. 개발 환경에서의 테스트나 간단한 Raw 데이터 보관용으로 사용할 수 있으며, AWS S3 같은 오브젝트 스토리지에 업로드하기 전에 임시로 데이터를 저장하는 용도로도 활용할 수 있습니다. Volume Exporter는 이벤트를 손실 없이 모두 파일로 저장하고자 할 때 유용하며, 이벤트 원본을 그대로 유지하면서 후처리를 진행해야 하는 경우에도 적합합니다. 특히 개발 환경에서는 Kafka나 Elasticsearch 같은 인프라를 구성하기 어렵기 때문에, 단순히 파일 형태로 저장할 수 있는 기능이 큰 도움이 됩니다.
-
-# Kubernetes event 수집방법
-해당 프로젝트는 Kubernetes API Server에 Informer 방식을 사용하여 이벤트를 실시간으로 수집합니다. Informer는 Kubernetes 클라이언트 라이브러리에서 제공하는 기능으로, 특정 리소스(이 경우에는 이벤트 리소스)의 변경 사항을 감지하고 이를 처리할 수 있도록 도와줍니다.
-
-Informer는 다음과 같은 방식으로 작동합니다:
-1. 리소스 감시: Informer는 Kubernetes API Server에 특정 리소스(이 경우에는 이벤트 리소스)를 감시하도록 설정됩니다. 이를 통해 해당 리소스에 대한 생성, 업데이트, 삭제 등의 변경 사항을 실시간으로 감지할 수 있습니다.
-2. 캐싱: Informer는 감시하는 리소스의 상태를 로컬 캐시에 저장합니다. 이를 통해 API Server에 대한 반복적인 요청을 줄이고, 빠른 액세스를 제공합니다.
-3. 이벤트 핸들링: Informer는 리소스의 변경 사항이 감지되면 등록된 핸들러 함수를 호출합니다. 이 함수를 통해 변경된 이벤트 데이터를 처리하고, 필요한 작업(예: 데이터 저장소로 전송)을 수행할 수 있습니다.
-4. 동기화: Informer는 주기적으로 API Server와 동기화하여 로컬 캐시의 상태를 최신 상태로 유지하여 일관성을 보장합니다.
-
-
-# event-collector 아키텍처
-![event-collector architecture](./docs/event_collector.drawio.png)
-1. Kubernetes API Server에서 이벤트를 수집합니다.
-2. Event Collector는 수집한 이벤트를 공통 모델로 변환합니다.
-3. Event Collector는 Kafka, Elasticsearch, Volume에 이벤트를 저장합니다.
-
-
-
-# 프로젝트 소스 코드 구조
-* cmd : 프로그램 application 소스 코드
-  * collector : 이벤트 수집기 소스 코드
-* pkg : 프로그램 application에서 사용하는 패키지 소스 코드
-  * kube : Kubernetes API Server와 통신하는 패키지 소스 코드
-  * logger : 로그를 수집하는 패키지 소스 코드
-* exporter : 프로그램 application에서 사용하는 패키지를 외부로 전달하는 패키지 소스 코드
-  * kafka : Kafka로 데이터를 전송하는 패키지 소스 코드
-  * elasticsearch : Elasticsearch로 데이터를 전송하는 패키지 소스 코드
-  * volume : Volume으로 데이터를 전송하는 패키지 소스 코드
-* dev_setup : Kafka, Elasticsearch, Volume 등의 데이터 저장소 설치를 위한 Helm 차트 및 매니페스트 소스 코드
-* manifest : Kubernetes 배포 파일 
+그러나 Kubernetes의 Event는 기본 TTL(1시간) 이후 자동으로 삭제되는 일시적 저장 구조이기 때문에, 실제 운영 환경에서 장애를 분석하거나 트렌드를 장기적으로 관찰하기에는 적합하지 않습니다. 이벤트가 사라지기 전에 빠르게 대응하지 않으면 문제 원인을 파악하는 데 어려움이 생기며, 장애 발생의 흐름을 재현하거나 클러스터 사용 패턴을 분석하는 것도 매우 어려워집니다. 이 프로젝트는 이러한 문제 의식에서 출발하여 중요한 정보를 지속적으로 수집하고 체계적으로 보존·분석할 수 있는 별도의 수집기를 목표로 개발되었습니다.
 
 ---
-# 개발 환경 구축
-개발 및 테스트 환경에서 event-collector를 안정적으로 실행하기 위해서는 몇 가지 핵심 컴포넌트를 사전에 구축해야 합니다. 본 프로젝트는 이벤트 데이터를 저장하고 분석하기 위한 백엔드로 Elasticsearch와 Kafka를 활용하므로, 로컬 또는 테스트용 Kubernetes 클러스터에 이 두 가지 시스템을 설치하는 과정이 필요합니다. 이를 통해 수집된 이벤트를 검색, 분석하거나 스트리밍 파이프라인으로 전달하는 기능을 충분히 검증할 수 있습니다.
 
-## Elasticsearch 설치
-개인 로컬 Kubernetes 클러스터 환경에 다음과 같은 방법으로 Elasticsearch를 3노드로 구성합니다.
+## 특징
+
+- **Informer 패턴 기반**: `client-go`의 Watch 스트리밍을 사용하여 API Server 폴링 없이 실시간으로 이벤트를 수신합니다.
+- **복수 Exporter 동시 활성화**: Kafka, Elasticsearch, Volume 중 하나 이상을 동시에 사용할 수 있습니다.
+- **인터페이스 기반 확장**: `Exporter` 인터페이스를 구현하면 새로운 저장소를 손쉽게 추가할 수 있습니다.
+- **경량 운영**: Go 고루틴·채널 기반 비동기 처리로 CPU/메모리 사용량을 최소화합니다.
+- **Graceful Shutdown**: SIGINT/SIGTERM 수신 시 버퍼에 남아 있는 데이터를 안전하게 플러시하고 종료합니다.
+- **네임스페이스 필터링**: 특정 네임스페이스만 선택적으로 수집하거나, 전체 클러스터를 대상으로 동작할 수 있습니다.
+
+---
+
+## 아키텍처
+
+![아키텍처 다이어그램](./docs/event_collector.drawio.png)
+
+```
+Kubernetes API Server
+        │  (Watch 스트리밍)
+        ▼
+  kube.Client (Informer)
+        │  OnAdd / OnUpdate / OnDelete 콜백
+        ▼
+  app.Handler.handle()
+        │  kube.ConvertBytes() → 공통 Event 모델 → JSON []byte
+        │
+        ├──▶ KafkaExporter.Write()         → sarama AsyncProducer → Kafka
+        ├──▶ ElasticsearchExporter.Write() → 채널 → 버퍼 → Bulk API → Elasticsearch
+        └──▶ VolumeExporter.Write()        → 채널 → 파일 기록 (크기/개수 기반 로테이션)
+```
+
+### 핵심 흐름
+
+1. `kube.Client`가 Kubernetes API Server와 Watch 커넥션을 맺고, Event 리소스의 추가·변경·삭제를 감지합니다.
+2. Informer 콜백(`OnAdd`, `OnUpdate`, `OnDelete`)이 `app.Handler`로 전달됩니다.
+3. Handler는 `v1.Event`를 공통 Event 모델로 변환한 뒤 JSON으로 직렬화합니다.
+4. 직렬화된 `[]byte`를 활성화된 모든 Exporter의 `Write()` 메서드로 전달합니다.
+5. 각 Exporter는 내부 채널로 데이터를 수신하여, 별도 고루틴에서 비동기로 저장소에 기록합니다.
+
+---
+
+## Kubernetes Event 수집 방식
+
+이 프로젝트는 Kubernetes `client-go`가 제공하는 **Informer 패턴**을 사용합니다. Informer는 API Server를 주기적으로 폴링하는 방식이 아닌, **Watch 기반 스트리밍**으로 이벤트를 수신하기 때문에 클러스터에 부담을 주지 않고 실시간에 가깝게 이벤트를 받아볼 수 있습니다.
+
+Informer는 다음과 같은 방식으로 동작합니다.
+
+1. **리소스 감시**: API Server에 Watch 요청을 보내고, `events.k8s.io/v1` 리소스의 변경 사항을 스트리밍으로 수신합니다.
+2. **로컬 캐시**: 감시 중인 리소스의 상태를 로컬 인메모리 캐시(Store)에 유지합니다. 이를 통해 API Server에 대한 반복 조회 없이 빠르게 객체 상태를 확인할 수 있습니다.
+3. **이벤트 핸들링**: `Add`, `Update`, `Delete` 이벤트가 발생할 때마다 등록된 `ResourceEventHandler`를 호출합니다. 이 프로젝트에서는 `app.Handler`가 이를 구현합니다.
+4. **Resync**: 설정된 주기(기본값: 비활성화)마다 전체 객체 목록을 재동기화하여 캐시 일관성을 보장합니다. 최솟값은 10분입니다.
+
+네임스페이스 설정에 따라 두 가지 모드로 동작합니다.
+
+- `namespaces`가 비어 있으면: 클러스터 전체를 대상으로 하는 단일 `SharedInformerFactory`를 생성합니다.
+- `namespaces`에 값이 있으면: 각 네임스페이스마다 별도의 `SharedInformerFactory`를 생성하여 격리된 Watch 커넥션을 유지합니다.
+
+---
+
+## Exporter 종류
+
+### Kafka Exporter
+
+Kafka Exporter는 수집된 이벤트 데이터를 Apache Kafka 토픽으로 비동기 전송합니다. `sarama` 라이브러리의 `AsyncProducer`를 기반으로 동작하며, 별도의 성공/실패 이벤트 루프를 통해 전송 결과를 처리합니다.
+
+대규모 이벤트 처리나 스트리밍 파이프라인 구성에 적합합니다. 규모가 큰 클러스터(수백 개 이상의 노드, 수천 개의 Pod)에서도 안정적으로 이벤트를 전달할 수 있으며, Flink, Spark, Kafka Streams, ksqlDB 같은 분석 시스템과 연동하여 실시간 분석 환경을 구성할 수 있습니다.
+
+**주요 설정값**:
+
+| 옵션           | 설명                          | 기본값 |
+|----------------|-------------------------------|--------|
+| `brokers`      | Kafka 브로커 주소 목록 (필수) | -      |
+| `topic`        | 이벤트를 전송할 토픽 (필수)   | -      |
+| `timeout`      | 프로듀서 요청 타임아웃        | 0      |
+| `retry`        | 전송 실패 시 재시도 횟수      | 0      |
+| `retryBackoff` | 재시도 간격                   | 0      |
+| `flushMsg`     | 배치 전송 메시지 수 기준      | 0      |
+| `flushTime`    | 배치 전송 시간 기준           | 0      |
+| `flushByte`    | 배치 전송 바이트 기준         | 0      |
+
+### Elasticsearch Exporter
+
+Elasticsearch Exporter는 운영 모니터링과 장애 분석을 위해 설계되었습니다. 이벤트를 내부 버퍼에 누적하다가 **플러시 조건(크기 또는 시간 초과)**이 충족되면 Bulk API로 일괄 전송하여 네트워크 오버헤드를 최소화합니다.
+
+이벤트를 Elasticsearch에 저장하면 Kibana를 통해 문제 시점별로 이벤트를 검색하고 필터링할 수 있으며, 특정 워크로드 또는 노드에서 반복적으로 발생하는 문제를 시각화하고 패턴을 찾을 수 있습니다. 예를 들어, 특정 Deployment에서 `CrashLoopBackOff`가 지속되거나 특정 노드에서만 `ImagePullBackOff`가 반복된다면 이를 손쉽게 확인할 수 있습니다.
+
+**주요 설정값**:
+
+| 옵션        | 설명                               | 기본값 |
+|-------------|------------------------------------|--------|
+| `addresses` | Elasticsearch 주소 목록 (필수)     | -      |
+| `index`     | 이벤트를 저장할 인덱스명 (필수)    | -      |
+| `chanSize`  | 수신 채널 버퍼 크기                | 200    |
+| `flushTime` | 주기적 플러시 간격 (초)            | 1s     |
+| `flushSize` | 버퍼 크기 기반 플러시 기준 (bytes) | 1MB    |
+
+인증 정보는 설정 파일 대신 환경 변수(`ELASTICSEARCH_USER`, `ELASTICSEARCH_PASSWORD`)로 주입합니다.
+
+### Volume Exporter
+
+Volume Exporter는 이벤트 데이터를 로컬 파일 시스템에 저장합니다. 파일 크기가 `maxFileSize`를 초과하면 새 파일을 생성하고, 파일 개수가 `maxFileCount`를 초과하면 오래된 파일부터 자동으로 삭제하는 **로테이션** 기능을 제공합니다.
+
+개발 환경에서의 테스트나 Raw 데이터 보관, AWS S3 같은 오브젝트 스토리지에 업로드하기 전 임시 저장 용도로 활용할 수 있습니다. 특히 Kafka나 Elasticsearch 인프라를 구성하기 어려운 환경에서 유용합니다.
+
+**주요 설정값**:
+
+| 옵션           | 설명                          | 기본값 |
+|----------------|-------------------------------|--------|
+| `fileName`     | 생성할 파일 이름 (필수)       | -      |
+| `filePath`     | 파일을 저장할 디렉터리 (필수) | -      |
+| `maxFileSize`  | 파일 1개의 최대 크기 (bytes)  | 50MB   |
+| `maxFileCount` | 보관할 최대 파일 개수         | 10     |
+
+---
+
+## 프로젝트 구조
+
+```
+event-collector/
+├── cmd/
+│   └── collector/
+│       ├── main.go              # 진입점: 환경 변수로 logger 초기화, 설정 로드, Collector 실행
+│       └── main_test.go         # TestMain: 테스트 환경 setup/teardown
+├── internal/
+│   ├── app/
+│   │   ├── collector.go         # Collector: Exporter/kube.Client 조립, graceful shutdown
+│   │   └── handler.go           # Handler: Informer 콜백 → Exporter 전달
+│   ├── config/
+│   │   └── config.go            # YAML 설정 파일 로드 및 필수 항목 검증
+│   ├── exporter/
+│   │   ├── exporter.go          # Exporter 인터페이스 (Component: Start / Exporter: Write)
+│   │   ├── elasticsearch/
+│   │   │   ├── exporter.go      # ElasticsearchExporter: 채널 + 버퍼 기반 Bulk 인덱싱
+│   │   │   ├── exporter_test.go
+│   │   │   └── option.go        # ES 옵션 (chanSize, flushTime, flushSize, 인증 정보)
+│   │   ├── kafka/
+│   │   │   ├── exporter.go      # KafkaExporter: sarama AsyncProducer 기반 비동기 전송
+│   │   │   ├── exporter_test.go
+│   │   │   └── option.go        # Kafka 옵션 (timeout, retry, flush, partitioner, compression)
+│   │   └── volume/
+│   │       ├── exporter.go      # VolumeExporter: 로컬 파일 기록, 크기/개수 기반 로테이션
+│   │       ├── exporter_test.go
+│   │       ├── option.go        # Volume 옵션 (maxFileSize, maxFileCount, chanSize)
+│   │       └── util.go          # 파일명 숫자 suffix 기준 정렬 유틸리티
+│   ├── kube/
+│   │   ├── client.go            # Kubernetes Informer 클라이언트 (네임스페이스별 또는 전체)
+│   │   ├── client_test.go
+│   │   ├── event.go             # v1.Event → 공통 Event 모델 변환 + JSON 직렬화
+│   │   └── option.go            # Client 옵션 (kubeconfig, resyncPeriod, namespaces)
+│   ├── logger/
+│   │   ├── logger.go            # CreateGlobalLogger: 환경 aware 초기화 (dev/prd)
+│   │   ├── logger_test.go
+│   │   ├── option.go            # logger 옵션 (level, size, age, backup, compress, encoder)
+│   │   └── writer.go            # 전역 logger 래퍼 (Debug/Info/Warn/Error/Fatal/Panic)
+│   ├── pprof/
+│   │   ├── pprof_dev.go         # 개발용: 0.0.0.0:6060 pprof HTTP 서버 (빌드 태그: !prd)
+│   │   └── pprof_prd.go         # 운영용: no-op (빌드 태그: prd)
+│   └── testutil/
+│       └── dummy.go             # 테스트용 더미 kube.Event 생성기
+├── manifest/
+│   ├── collector-deploy.yaml    # Collector ConfigMap + Deployment manifest
+│   ├── collector-rbac.yaml      # ClusterRole + ClusterRoleBinding
+│   └── ghar_rbac.yaml           # GitHub Actions Runner RBAC
+├── .github/
+│   └── workflows/
+│       └── go-test.yaml         # Go 테스트 CI (vet, race detector, timeout 포함)
+├── Dockerfile                   # 멀티스테이지 빌드 (golang:1.26-alpine → alpine:3.21)
+├── Makefile                     # make build: Docker 이미지 빌드
+├── go.mod
+└── go.sum
+```
+
+---
+
+## 설정
+
+설정 파일 기본 경로는 `/etc/collector/config.yaml`이며, Kubernetes ConfigMap을 통해 주입합니다.
+
+```yaml
+kube:
+  config: ""           # kubeconfig 파일 경로 (비어 있으면 in-cluster 자동 설정)
+  resync: 0            # informer resync 주기 (0이면 비활성화, 최솟값 10m)
+  namespaces: []       # 수집 대상 네임스페이스 목록 (비어 있으면 전체 클러스터)
+
+kafka:
+  enable: false
+  brokers: []          # Kafka 브로커 주소 목록 (필수)
+  topic: ""            # 이벤트를 전송할 토픽 (필수)
+  timeout: 0
+  retry: 0
+  retryBackoff: 0
+  flushMsg: 0
+  flushTime: 0
+  flushByte: 0
+
+elasticsearch:
+  enable: false
+  addresses: []        # Elasticsearch 주소 목록 (필수)
+  index: ""            # 이벤트를 저장할 인덱스명 (필수)
+  chanSize: 0          # 수신 채널 버퍼 크기 (기본값 200)
+  flushTime: 0         # 플러시 간격 (초, 기본값 1)
+  flushSize: 0         # 플러시 크기 기준 (bytes, 기본값 1MB)
+
+volume:
+  enable: false
+  fileName: ""         # 파일 이름 (필수)
+  filePath: ""         # 저장 디렉터리 경로 (필수)
+  maxFileSize: 0       # 파일 최대 크기 (bytes, 기본값 50MB)
+  maxFileCount: 0      # 최대 파일 개수 (기본값 10개)
+```
+
+### 환경 변수
+
+로거 설정 및 Elasticsearch 인증 정보는 환경 변수로 주입합니다.
+
+| 환경 변수                | 설명                                      | 기본값        |
+|--------------------------|-------------------------------------------|---------------|
+| `LOG_LEVEL`              | 최소 로그 레벨 (DEBUG, INFO, WARN, ERROR) | INFO          |
+| `LOG_SIZE`               | 로그 파일 최대 크기 (MB)                  | 0 (제한 없음) |
+| `LOG_AGE`                | 로그 파일 보관 기간 (일)                  | 0 (제한 없음) |
+| `LOG_BACK`               | 보관할 이전 로그 파일 최대 개수           | 0 (제한 없음) |
+| `LOG_COMPRESS`           | 로그 파일 gzip 압축 여부 (true/false)     | false         |
+| `APP_ENV`                | `dev` 설정 시 no-op logger 사용           | -             |
+| `ELASTICSEARCH_USER`     | Elasticsearch 인증 사용자명               | -             |
+| `ELASTICSEARCH_PASSWORD` | Elasticsearch 인증 비밀번호               | -             |
+
+---
+
+## 빌드 및 실행
+
+### 로컬 빌드
+
 ```bash
-# elasticsearch 설치
+# 일반 빌드 (pprof 활성화)
+go build ./cmd/collector
+
+# 운영 빌드 (pprof 비활성화, 바이너리 크기 최소화)
+go build -tags prd -ldflags="-w -s" -o collector ./cmd/collector
+
+# 실행 (설정 파일 경로 지정 필요 시 코드 수정 또는 심볼릭 링크 활용)
+./collector
+```
+
+### Docker 빌드
+
+멀티스테이지 빌드로 최종 이미지는 `alpine:3.21` 기반이며 비루트 유저(`collector`)로 실행됩니다.
+
+```bash
+# 기본 빌드
+make build
+
+# 태그 지정
+make build IMAGE_TAG=v1.0.0
+```
+
+---
+
+## Kubernetes 배포
+
+### 실행 조건
+
+Pod 형태로 클러스터 내부에 배포하는 경우 Kubernetes Event 리소스에 대한 `get`, `list`, `watch` 권한이 필요합니다. 최소 권한 원칙에 따라 Event 리소스 이외의 불필요한 권한은 부여하지 않습니다.
+
+```yaml
+# collector-rbac.yaml
+rules:
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+```
+
+### 배포 절차
+
+```bash
+# 1. 네임스페이스 생성
+kubectl create namespace event-collector
+
+# 2. RBAC 적용 (ClusterRole + ClusterRoleBinding)
+kubectl apply -f manifest/collector-rbac.yaml
+
+# 3. Collector 배포 (ConfigMap + Deployment)
+kubectl apply -f manifest/collector-deploy.yaml
+
+# 4. 배포 확인
+kubectl get pods -n event-collector
+kubectl logs -f deployment/collector -n event-collector
+```
+
+`collector-deploy.yaml`에는 설정 파일을 ConfigMap으로 주입하는 구조가 포함되어 있습니다.
+
+```yaml
+volumes:
+  - name: config-volume
+    configMap:
+      name: collector-config
+volumeMounts:
+  - name: config-volume
+    mountPath: /etc/collector   # 기본 설정 파일 경로: /etc/collector/config.yaml
+```
+
+---
+
+## 개발 환경 구축
+
+개발 및 테스트 환경에서는 Elasticsearch와 Kafka를 Helm을 통해 설치합니다.
+
+### Elasticsearch 설치
+
+```bash
 NAMESPACE=event-collector
-helm upgrade --install elasticsearch dev_setup/helm/elasticsearch \
+
+# Elasticsearch 설치 (3노드 구성)
+helm upgrade --install elasticsearch bootstrap/helm/elasticsearch \
     --namespace $NAMESPACE --create-namespace \
-    -f dev_setup/helm/elasticsearch.yaml
+    -f bootstrap/helm/elasticsearch.yaml
 
 # 배포 확인
+kubectl get pods -n $NAMESPACE
+
+# ILM 정책, 인덱스 템플릿, 초기 인덱스 생성
+./bootstrap/helm/elasticsearch_ilm.sh
+./bootstrap/helm/elasticsearch_template.sh
+./bootstrap/helm/elasticsearch_index.sh
+```
+
+### Kafka 클러스터 설치 (Strimzi)
+
+```bash
 NAMESPACE=event-collector
+
+# Strimzi Kafka Operator 설치
+helm upgrade --install strimzi bootstrap/helm/strimzi-kafka-operator \
+    --namespace $NAMESPACE --create-namespace \
+    -f bootstrap/helm/strimzi.yaml
+
+# Kafka 클러스터 및 토픽 생성
+kubectl apply -f bootstrap/helm/kafka_cluster.yaml -n $NAMESPACE
+kubectl apply -f bootstrap/helm/kafka_topic.yaml -n $NAMESPACE
+
+# 배포 확인
 kubectl get pods -n $NAMESPACE
 ```
 
-설치된 Elasticsearch에 ILM 정책, 인덱스 템플릿, 초기 인덱스를 생성합니다.
-```bash
-./dev_setup/helm/elasticsearch_ilm.sh
-./dev_setup/helm/elasticsearch_template.sh
-./dev_setup/helm/elasticsearch_index.sh
+---
+
+## 테스트
+
+단순한 Mock 테스트 대신 실제 Kubernetes 클러스터에서 Kafka·Elasticsearch와 연동하여 동작하는 **통합 테스트** 방식을 채택했습니다. GitHub Actions Self-Hosted Runner를 Kubernetes 클러스터 내부에 직접 배포하여 운영 환경과 동일한 조건에서 검증합니다.
+
+![CI 워크플로우](./docs/go-test-workflows.drawio.png)
+
+### GitHub Actions 워크플로우
+
+`develop` 브랜치 push 및 `main` 브랜치 PR 시 자동으로 실행됩니다.
+
+```yaml
+- go mod verify          # 의존성 무결성 검증
+- go vet ./...           # 정적 분석
+- go test -v -race -timeout 300s ./...   # race detector 포함 전체 테스트
 ```
 
-## Kafka cluster install (using Strimzi)
-Kubernetes 클러스터에 Strimzi Kafka Operator를 사용하여 Kafka 클러스터를 설치합니다.
+외부 서비스(Kafka, Elasticsearch) 주소는 GitHub Actions Variables/Secrets로 관리하며, Runner는 클러스터 내부에서 실제 서비스와 직접 통신합니다.
+
+### Self-Hosted Runner 설정
+
 ```bash
-# strimzi kafka operator 설치
-NAMESPACE=event-collector
-helm upgrade --install strimzi dev_setup/helm/strimzi-kafka-operator \
-    --namespace $NAMESPACE --create-namespace \
-    -f dev_setup/helm/strimzi.yaml
-
-# kafka cluster 및 topic 생성
-NAMESPACE=event-collector
-kubectl apply -f dev_setup/helm/kafka_cluster.yaml -n $NAMESPACE
-kubectl apply -f dev_setup/helm/kafka_topic.yaml -n $NAMESPACE
-
-# 배포 확인
-kubectl get pods -n $NAMESPACE
-```
-
-# 테스트 환경 구축
-저는 실제 데이터를 다루지 않는 단순한 Mock 테스트보다, 실제 컴포넌트들이 동작하는 환경에서 테스트가 수행되는 방식을 선호합니다. 이러한 이유로 event-collector 프로젝트에서는 GitHub Actions의 Self-Hosted Runner를 활용하여 실제 Kubernetes 클러스터에서 이벤트를 수집하고, 그 데이터를 Elasticsearch와 Kafka에 실제로 저장하는 통합 테스트 환경을 구축하였습니다. 이를 위해 Self-Hosted Runner를 Kubernetes 클러스터 내에 직접 배포하였으며, 해당 Runner는 GitHub Actions 워크플로우를 통해 go test를 실행하면서 실제 클러스터 환경에서 이벤트 수집 로직이 올바르게 동작하는지 검증하도록 구성되어 있습니다. 이러한 방식은 단순한 유닛 테스트를 넘어, 운영 환경과 동일한 조건에서 collector의 동작을 검증할 수 있다는 점에서 신뢰성과 안정성을 크게 높여줍니다.
-
-![event-collector architecture](./docs/go-test-workflows.drawio.png)
-
-## github action self-hosted runner service account permission setup
-TDD 환경 구축을 위해 GitHub Action Self-Hosted Runner를 설정합니다. 먼저, 필요한 권한을 가진 서비스 계정을 생성합니다.
-```bash
-NAMESPACE="gh-runner"
+# RBAC 설정
+NAMESPACE=gh-runner
 kubectl create namespace ${NAMESPACE}
-kubectl apply -f manifest/gh_rbac.yaml
-```
+kubectl apply -f manifest/ghar_rbac.yaml
 
-# github action self-hosted runner setup
-GitHub Actions의 self-hosted runner를 Kubernetes 클러스터에 배포합니다.
-```bash
 # gha-runner-controller 설치
-NAMESPACE="gh-runner"
 helm upgrade --install gh-arc \
-	oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
-	--namespace "${NAMESPACE}" --create-namespace
+    oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
+    --namespace "${NAMESPACE}" --create-namespace
 
-# self-hosted runner 배포
-NAMESPACE="gh-runner"
+# Self-Hosted Runner 배포
 helm upgrade --install gh-runner \
     oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
     --namespace ${NAMESPACE} --create-namespace \
-    -f dev_setup/helm/gh-runner.yaml \
+    -f bootstrap/helm/gh-runner.yaml \
     --set githubConfigSecret.github_token=${GITHUB_TOKEN} \
     --set githubConfigUrl=${GITHUB_REPO}
 ```
 
-## Github workflow 작성
-.github/workflows/go-test.yaml 파일을 생성하여 Go 테스트를 자동화합니다.
-[go-test.yaml](https://github.com/k8shuginn/event-collector/blob/develop/.github/workflows/go-test.yaml)
+### 로컬 테스트 실행
+
+```bash
+# race condition 검사 포함 전체 테스트
+go test -race ./...
+
+# Volume Exporter 단위 테스트 (외부 서비스 불필요)
+go test -v ./internal/exporter/volume/...
+
+# Elasticsearch/Kafka 통합 테스트 (서비스 환경 변수 필요)
+ELASTICSEARCH_ADDR=http://localhost:9200 \
+ELASTICSEARCH_INDEX=event \
+go test -v ./internal/exporter/elasticsearch/...
+```
+
+---
+
+## 주요 의존성
+
+| 패키지                                   | 버전    | 용도                              |
+|------------------------------------------|---------|-----------------------------------|
+| `k8s.io/client-go`                       | v0.32.x | Kubernetes Informer, Clientset    |
+| `k8s.io/api`                             | v0.32.x | Kubernetes Event v1 타입          |
+| `github.com/IBM/sarama`                  | v1.x    | Kafka 비동기 프로듀서             |
+| `github.com/elastic/go-elasticsearch/v8` | v8.x    | Elasticsearch Bulk API 클라이언트 |
+| `go.uber.org/zap`                        | v1.x    | 고성능 구조화 로깅                |
+| `gopkg.in/natefinch/lumberjack.v2`       | v2.x    | 운영용 로그 파일 로테이션         |
+| `gopkg.in/yaml.v3`                       | v3.x    | 설정 파일 YAML 파싱               |
